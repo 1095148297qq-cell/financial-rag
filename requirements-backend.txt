@@ -1,0 +1,8 @@
+fastembed==0.8.1
+jieba==0.42.1
+rank-bm25==0.2.2
+numpy>=1.26,<3
+requests>=2.32,<3
+python-dotenv>=1,<2
+fastapi>=0.115,<1
+uvicorn>=0.30,<1

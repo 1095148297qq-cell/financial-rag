@@ -1,0 +1,7 @@
+{
+  "server_mode": "public",
+  "local_auth_advertised": false,
+  "local_auth_status": 403,
+  "missing_visitor_key_status": 400,
+  "paid_api_calls": 0
+}

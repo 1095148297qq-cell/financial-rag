@@ -1,0 +1,16 @@
+**
+!Dockerfile
+!requirements-backend.txt
+!financial_rag/
+!financial_rag/*.py
+!output/
+!output/questions.json
+!output/evaluation/
+!output/evaluation/*_hybrid_expanded.json
+!output/evaluation_v4/
+!output/evaluation_v4/*_hybrid_expanded.json
+!deploy-data/
+!deploy-data/index/
+!deploy-data/index/*
+!deploy-data/models/
+!deploy-data/models/**
