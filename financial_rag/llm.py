@@ -37,10 +37,14 @@ def configuration():
     else: raise RuntimeError('AUTH_MODE 必须为 api_key 或 chatgpt_oauth')
     return mode,base,token,model
 
-def answer(question,chunks,*,credentials=None):
+def answer(question,chunks,*,credentials=None,required_model=None,required_auth_mode=None):
     OUTPUT.mkdir(exist_ok=True)
     ledger=OUTPUT/'usage.jsonl'
     mode,base,token,model=credentials if credentials is not None else configuration()
+    if required_model is not None and model != required_model:
+        raise RuntimeError('模型与实验冻结配置不同；请求未发送')
+    if required_auth_mode is not None and mode != required_auth_mode:
+        raise RuntimeError('授权方式与实验冻结配置不同；请求未发送')
     evidence='\n\n'.join(f"[{i}] 公司={c['company']} 年报={c['year']} PDF页={c['page']} 章节={c['chapter']} 块={c['id']}\n{c['text']}" for i,c in enumerate(chunks,1))
     prompt=('只根据给定的上市公司年报证据回答中文问题。每项事实必须标明证据编号，例如[1]。'
         '金额先核对单位；区分营业收入和营业总收入、归母净利润和净利润。'

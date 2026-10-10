@@ -51,6 +51,7 @@ Copy-Item .env.example .env
   evaluation_records_v4.md       # 逐题可读记录
   evaluation_summary_v4.json     # 汇总及测试范围
   manual_review_v4.json          # 人工复核及证据指纹
+  challenge/                    # 4道挑战题、8次同模型对照与真实失败
   pdf/conclusion.pdf            # 一页结论
   screenshots/                  # 页面截图，优先使用v4_submission_*.png
   submission.txt                # 三行提交文本
@@ -83,6 +84,27 @@ python -m financial_rag.check_public_files
 ```
 
 `verify_web`需要本机后端及索引；单元测试使用临时数据，不依赖作业附件。安全扫描结果也只保存在本机`output/`。
+
+### 同索引、同模型的挑战对照
+
+2026-10-10新增4道挑战题，覆盖合并/母公司现金流、多事项查询、干扰公司名称、现金流调节附注。原10题继续作为开发回归集，没有替换或改写。挑战题先核对原始PDF，再冻结题目、参考页、索引文件及召回证据的SHA256；使用同一v4索引和`gpt-6-luna`，普通混合与现有增强各生成一次，共8次现有授权调用。
+
+完整答对为普通混合2/4、增强混合0/4。两种方式都漏掉多事项题的合同负债；增强遗漏母公司目标行及附注调整项，并在正确召回金额后将50.09%算成50.18%。普通混合在附注题给出正确数值，但明确无法确认完整排名，按冻结标准记为部分完成。诚实拒答与编造数字分别记录。四题、每格单次生成、上下文预算不同，不能据此推断总体准确率或计算错误的因果关系。
+
+这些结果及完整原答、召回块、评分和参考页仅在本机`output/challenge/`与`交付材料/challenge/`。不上传参考答案或评测附件。新克隆者可自行建立符合下列字段的`output/challenge/questions.json`（4题）：`id`、`question`、`type`、`expected_companies`、`expected_values`、`criteria`、`sources`（每项含`file`与`pages`）。先自行核对参考页，再运行：
+
+```powershell
+# prepare仅做本地检索，不生成答案；实验固定为现有本地授权，不使用API key
+python -m financial_rag.challenge_evaluate prepare --model gpt-6-luna
+# run最多8次回答，验证冻结输入与模型/授权；已有开始/失败记录均不自动重试
+python -m financial_rag.challenge_evaluate run
+```
+
+调用前必须具备该模型的有效本地授权；模型或授权方式变化时请求前停止。`challenge_report`只发布已人工复核且证据指纹匹配的本机报告，不能为新结果自动评分。`review_checks`提供声明精度的百分比核对和实际引用页覆盖辅助检查；引用到某页仍不代表对应事实受支持，原10题自动诊断保持原样。
+
+当前提交的一页结论是`pdf/conclusion.pdf`，同时包含原10题与挑战结果；更新前版本另存`pdf/conclusion_v4_before_challenge.pdf`，仅作历史存档。`challenge/report.html`是原答的离线复核页面，`screenshots/challenge_C03_comparison.png`是该页面截图，作为原问答页面截图的补充。再次运行旧`deliver_v4`会生成仅含回归结果的旧式结论；最终交付应以复核完成后的`challenge_report`输出为准。
+
+下一步优先验证子问题分别检索、按报表口径与附注补全相关表、覆盖检查和确定性计算。当前未根据这4题再次调整检索规则，未宣称这些改进已经有效。
 
 ## 网页构建
 
