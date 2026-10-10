@@ -89,7 +89,10 @@ def main():
     doc=fitz.open(pdfdir/'conclusion.pdf')
     if len(doc)!=1: raise RuntimeError(f'Expected one page, got {len(doc)}')
     doc[0].get_pixmap(matrix=fitz.Matrix(1.6,1.6)).save(pdfdir/'conclusion_preview.png')
-    (OUTPUT/'submission.txt').write_text('方向：A\n代码仓库：待填写项目仓库地址\n一句话结论：同一批财报，年度金额、跨年变化和跨公司比较适合建库，因为事实持续更新，答案需要出处、口径核对和完整覆盖。\n',encoding='utf-8')
+    submission=OUTPUT/'submission.txt'
+    existing=submission.read_text(encoding='utf-8').splitlines() if submission.exists() else []
+    repository_line=next((line for line in existing if line.startswith('代码仓库：')),'代码仓库：待填写项目仓库地址')
+    submission.write_text('方向：A\n'+repository_line+'\n一句话结论：同一批财报，年度金额、跨年变化和跨公司比较适合建库，因为事实持续更新，答案需要出处、口径核对和完整覆盖。\n',encoding='utf-8')
     print(json.dumps(summary,ensure_ascii=False))
 
 if __name__=='__main__': main()
