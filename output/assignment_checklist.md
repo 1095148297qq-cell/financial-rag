@@ -7,7 +7,7 @@
 | 向量+BM25、问答页面、答案带出处 | 本机满足；云端尚未上线 | 本地BGE向量512维、BM25、RRF。页面显示引用、块ID、章节、PDF页码和官方原文。默认只检索；本地授权生成或访客自带API key。 |
 | 10题、至少2道跨公司全景、逐题召回/正确性/错误 | 满足：v4实际10题，2道12公司全景 | evaluation_v4/；evaluation_records_v4.md；manual_review_v4.json。人工10/10，自动9/10；Q03为约数精度漏判。固定开发题，不是独立测试集。v3共42份结果及失败保留。 |
 | 一页结论PDF+页面截图 | 已生成并视觉检查 | pdf/conclusion.pdf；screenshots/v4_submission_single.png、v4_submission_panorama.png。 |
-| 代码仓库地址及三行提交文本 | 用户已提供空仓库，准备推送 | submission.txt已填写https://github.com/1095148297qq-cell/financial-rag；尚待推送验证。 |
+| 代码仓库地址及三行提交文本 | 已上传GitHub并验证远端提交 | submission.txt已填写https://github.com/1095148297qq-cell/financial-rag；代码已推送main，远端与本地提交一致。 |
 | 前端Vercel | 可部署文件已准备；尚未部署 | 根目录vercel.json；DEPLOYMENT.md。不配置后端仅展示已保存评测，不具备公网实时检索。 |
 | 密钥及个人授权不进仓库 | 候选文件与构建产物扫描通过 | deployment_security_check.json；公开后端不允许调用作者本地授权。 |
 
