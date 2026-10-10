@@ -4,6 +4,7 @@ $env:PYTHONUTF8 = '1'
 $env:RAG_SERVER_MODE = 'local'
 $env:RAG_ALLOWED_ORIGINS = 'http://127.0.0.1:3000,http://localhost:3000'
 $env:RAG_API_URL = 'http://127.0.0.1:8000'
+$env:RAG_INCLUDE_EVALUATIONS = '1'
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
 if ($nodeCommand) { $nodeExe = $nodeCommand.Source } else {
     $nodeExe = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'

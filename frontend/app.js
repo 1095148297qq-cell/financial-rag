@@ -3,6 +3,11 @@ const config = await (await fetch('/config.json')).json();
 const api = config.apiUrl.replace(/\/$/,'');
 let current = null;
 let ready = false;
+const savedVersions=config.availableEvaluations||[];
+const hasSaved=savedVersions.length>0;
+$('evaluation-controls').hidden=!hasSaved;
+$('evaluation-version').replaceChildren(...savedVersions.map(v=>Object.assign(document.createElement('option'),{value:v,textContent:v==='v4'?'v4 最终评测 · 10题':'v3 历史实验 · 含失败案例'})));
+if(!hasSaved)$('experiment-hint').textContent='点选问题填入输入框。评测结果及作业附件保存在项目作者本地，不随代码仓库发布。';
 function notice(message){$('notice').hidden=!message;$('notice').textContent=message;}
 function node(tag,text,className){const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;return n;}
 function inline(parent,text){
@@ -51,13 +56,13 @@ for(const q of config.questions){
   const row=node('div','','question-row'),pick=node('button',q.question,'pick'),history=node('button','评测记录','quiet');
   pick.type=history.type='button';pick.onclick=()=>{$('question').value=q.question;$('company').value=q.companies.length===1?q.companies[0]:'';$('year').value=q.years.length===1?String(q.years[0]):'';$('panoramic').checked=q.type==='panoramic';$('question').focus();};
   history.onclick=async()=>{try{show(await (await fetch(`/examples/${$('evaluation-version').value}/${q.id}.json`)).json());$('result').scrollIntoView({behavior:'smooth',block:'start'});}catch{notice('评测记录载入失败，请刷新重试。');}};
-  row.append(node('span',q.id,'qid'),pick,history);$('questions').append(row);
+  row.append(node('span',q.id,'qid'),pick);if(hasSaved)row.append(history);$('questions').append(row);
 }
 $('auth').onchange=()=>{$('key-fields').hidden=$('auth').value!=='own_key';$('local-note').hidden=$('auth').value!=='local';$('submit').firstChild.textContent=$('auth').value==='retrieval'?'检索证据 ':'检索并回答 ';};
 $('clear-key').onclick=()=>{$('api-key').value='';};
 $('download').onclick=()=>{if(!current)return;const u=URL.createObjectURL(new Blob([JSON.stringify(current,null,2)],{type:'application/json'}));const a=node('a','');a.href=u;a.download='financial_report_record.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
 $('ask').onsubmit=async e=>{
-  e.preventDefault();notice('');if(!ready){notice('实时后端尚未连接。你仍可以查看下方 10 道题的评测记录。');return;}
+  e.preventDefault();notice('');if(!ready){notice(hasSaved?'实时后端尚未连接。你仍可以查看下方 10 道题的评测记录。':'尚未配置或连接实时后端，请先按照部署说明连接后端。');return;}
   const auth=$('auth').value;if(auth==='own_key'&&!$('api-key').value.trim()){notice('请填写你自己的 API key，或选择只检索证据。');return;}
   const button=$('submit');button.disabled=true;button.textContent=auth==='retrieval'?'正在检索…':'检索与生成中…';
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
@@ -70,12 +75,12 @@ $('ask').onsubmit=async e=>{
   finally{clearTimeout(timer);button.disabled=false;$('auth').onchange();}
 };
 async function connect(){
-  if(!api){$('status').textContent='评测记录演示';notice('尚未配置实时后端：可查看 v4 评测及 v3 历史记录。部署时设置 RAG_API_URL 即可启用实时检索。');return;}
+  if(!api){$('status').textContent=hasSaved?'评测记录演示':'未配置实时后端';notice(hasSaved?'尚未配置实时后端：可查看本地已保存评测。':'当前仅展示提问入口；配置后端公开地址 RAG_API_URL 并重新部署后，可启用实时检索。');return;}
   try{
     const r=await fetch(api+'/health',{signal:AbortSignal.timeout(15000)}),h=await r.json();ready=r.ok&&h.ready;
     $('status').textContent=ready?'实时后端已连接':'索引准备中';$('status').classList.toggle('online',ready);
     if(h.local_auth && ['localhost','127.0.0.1'].includes(location.hostname)){$('auth').append(Object.assign(node('option','GPT · 本机已有授权'),{value:'local'}));}
     if(!ready)notice('后端已启动，正在准备索引。');
-  }catch{$('status').textContent='后端暂未连接';notice('实时后端暂时不可用，可以先查看评测记录。');}
+  }catch{$('status').textContent='后端暂未连接';notice(hasSaved?'实时后端暂时不可用，可以先查看评测记录。':'实时后端暂时不可用，请检查后端服务。');}
 }
 await connect();

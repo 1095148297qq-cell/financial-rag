@@ -23,3 +23,7 @@ api_verification/
 *.pptx
 PROGRESS.md
 output/*.zip
+
+# Local experiment records and submission attachments
+output/
+交付材料/

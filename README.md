@@ -39,34 +39,66 @@ Copy-Item .env.example .env
 - v4 增强检索额外按表格的年度列、指标行名及前25页位置识别年度指标表，优先补入相关原文行。该规则不读取参考答案文件；不能确认年度列时仍依赖常规检索，可能遗漏或发生口径错误。
 - GPT 仅根据召回证据作答，每项事实标引用编号，可展开原文并跳转官方 PDF。
 
-## 实验与交付
+## 代码与本地交付材料
 
-`output/questions.json`：10道题，含2道12公司全景题。`output/financial_facts.json`：由原始PDF核对的年度指标参考数据。
+仓库只保留程序源码、依赖、测试、部署配置及运行必需的配置数据。`data/manifest.json`为官方下载清单；`financial_rag/example_questions.json`只包含10道问题和筛选配置，不含模型回答或评分。
 
-当前交付使用 **v4**：`output/evaluation_v4/`保存10份实际回答、完整召回块、原自动诊断及人工复核；`output/evaluation_records_v4.md`逐题说明。2026-10-10增强混合检索实测，模型`gpt-6-luna`，本地已有授权，10次调用，输入62,810 / 输出1,916 tokens。人工复核10/10；自动诊断9/10。Q03题意为约数，65.8%符合实际比值65.768690%，自动检查要求65.77%而漏判，原诊断完整保留。复核由助手完成，不是教师评分。
+评测、结论PDF、截图和审核输出均保存在作者本机项目目录中，**不随GitHub仓库上传**：
 
-这10题用于开发和调试，不是独立留出测试，不能外推总体准确率。v3与v4的模型、提取及检索流程均有变化，不能将结果差异归因于某一个改动。
+```text
+交付材料/
+  evaluation_v4/                 # 当前10题：回答、召回块、引用和逐题复核
+  evaluation_records_v4.md       # 逐题可读记录
+  evaluation_summary_v4.json     # 汇总及测试范围
+  manual_review_v4.json          # 人工复核及证据指纹
+  pdf/conclusion.pdf            # 一页结论
+  screenshots/                  # 页面截图，优先使用v4_submission_*.png
+  submission.txt                # 三行提交文本
+  evaluation/                   # v3历史实验和失败案例
+```
 
-历史v3实验保留于`output/evaluation/`、`output/manual_review.json`和`output/evaluation_records.md`，共42份实际结果。向量4/10、BM25 3/10、混合5/10、增强混合7/10，模型`gpt-5.6-luna`。失败包括全景信息遗漏、现金流计算、把净流出称为亏损；两次模型目录请求超时记录另存`evaluation_attempts/`。历史回答和拒答没有改写。
+`output/`保留程序生成的工作输出；运行 `python -m financial_rag.export_deliverables` 可复制到同级的`交付材料/`，按SHA256验证副本。两个目录均在`.gitignore`中。克隆仓库不会获得既有评测或附件；提交作业时由作者单独上传PDF和截图。
 
-交付文件：`output/pdf/conclusion.pdf`（已验证一页、当前v4结论）；`output/screenshots/v4_*.png`（当前问答页面）；`output/submission.txt`（上传后填写仓库地址）。前端默认v4评测，可切换v3历史实验，保存记录不会冒充实时生成。
+## 复现评测
 
-生成参考答案及评测（会调用模型、消耗计划额度或自己的 API 余额；本轮没有重跑42次生成实验）：
+先下载原始年报并完成提取和索引，再运行：
 
 ```powershell
 python -m financial_rag.prepare_evaluation
-python -m financial_rag.evaluate
+python -m financial_rag.evaluate --modes hybrid_expanded
 ```
 
-评测写入 `output/evaluation_v4/`，不会覆盖 v3 历史实验；重跑前请另存现有v4结果，并重新人工复核，不能沿用评分。控制成本可只运行 `python -m financial_rag.evaluate --modes hybrid_expanded --question-ids Q02 Q03`。不调用模型的实时检索检查用 `python -m financial_rag.verify_web`。
+准备脚本从原始PDF提取参考指标；评测实际调用模型，消耗运行者的API余额或账户计划额度。当前10题包含2道跨12家公司的全景题。生成结果写入`output/evaluation_v4/`，包括实际回答、召回块和自动诊断；自动诊断不能替代人工复核。
 
-`MAX_MODEL_CALLS` 为单次本地实验目录累计调用次数上限，包含失败请求。请求不自动重试。API key 模式限制回答输出 token；授权模式按官方支持字段调用。真实 token 用量保存在各评测记录中；调用次数限制不等于货币预算限制。
+已有结果重跑前请另存备份，并重新核对金额、单位、年度、正负号、计算、排序及引用。固定题用于开发调试，不能外推总体准确率。`deliver_v4`仅用于本机已完成人工复核的记录，检查证据指纹，不会给新回答自动评分；新克隆环境缺少复核文件时不能直接运行它。
+
+控制调用次数可指定 `--question-ids Q02 Q03`。`MAX_MODEL_CALLS`限制本地累计调用次数（含失败请求），请求不自动重试；次数上限不等于货币预算。向量计算使用本地模型。
+
+不调用模型的检查：
+
+```powershell
+python -m unittest discover -s tests -v
+python -m financial_rag.verify_web
+python -m financial_rag.check_public_files
+```
+
+`verify_web`需要本机后端及索引；单元测试使用临时数据，不依赖作业附件。安全扫描结果也只保存在本机`output/`。
+
+## 网页构建
+
+```powershell
+node frontend/build.mjs
+```
+
+默认构建只依赖仓库内代码和配置，**不读取或发布评测附件**。Vercel构建无需Python；根目录`vercel.json`已配置构建命令及产物目录。没有后端时展示提问入口及10道问题，不提供实时问答或已保存答案。设置`RAG_API_URL`为公开HTTPS后端地址并重新部署后，才可实时检索。
+
+本机`start-web.ps1`显式设置`RAG_INCLUDE_EVALUATIONS=1`：本地`output/`内有完整记录时，页面可额外查看v4评测和v3历史结果。该设置不是公开部署的必要条件，Vercel不需要配置它，也不应将本机评测附件上传仓库以满足构建。
 
 ## 数据和密钥
 
-收录复核见 `output/report_accuracy_audit.md` 及其 JSON：24份官方PDF重新下载后与本地SHA256一致，公司/年度/全文身份通过；72项年度营收、归母净利润、经营现金流金额与合并报表核对一致。23条发布日期已由UTC修正为中国时区。该文件记录修复前 v3 的1,744个可疑表头块，可疑数量不等于错误数量。修复后回归检查见 `output/extraction_v4_audit.json`，可运行 `python -m financial_rag.check_extraction` 重现。原始文件正确不代表提取库完全准确。
+本机收录复核文件为 `output/report_accuracy_audit.md` 及其 JSON（不包含在仓库中）：24份官方PDF重新下载后与本地SHA256一致，公司/年度/全文身份通过；72项年度营收、归母净利润、经营现金流金额与合并报表核对一致。23条发布日期已由UTC修正为中国时区。该文件记录修复前 v3 的1,744个可疑表头块，可疑数量不等于错误数量。修复后回归检查见 `output/extraction_v4_audit.json`，可运行 `python -m financial_rag.check_extraction` 重现。原始文件正确不代表提取库完全准确。
 
-`output/evaluation/`与旧截图保留v3历史证据；当前结论PDF和`v4_`截图对应v4最终评测。v4 索引位于被忽略的 `data/index_v4/`。
+本机`交付材料/`保留当前v4结论、截图及历史v3证据。v4 索引位于被忽略的 `data/index_v4/`。
 
 仓库不包含原始 PDF、模型缓存、向量索引、私有 `.env` 或授权凭据，包含官方下载清单和可复现脚本。上传前检查 `.gitignore`。不要提交密码、API key、用户目录或浏览器授权日志。
 

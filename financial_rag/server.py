@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, SecretStr
 
-from .paths import COMPANIES, INDEX, OUTPUT
+from .paths import COMPANIES, INDEX, OUTPUT, ROOT
 from .retrieval import Retriever
 from .llm import answer
 
@@ -53,7 +53,7 @@ def health():
 @app.get('/api/config')
 def config():
     return {'companies':NAMES,'years':[2024,2025],'local_auth':LOCAL,
-        'questions':[{k:q[k] for k in ['id','question','companies','years','type']} for q in json.loads((OUTPUT/'questions.json').read_text(encoding='utf-8'))]}
+        'questions':[{k:q[k] for k in ['id','question','companies','years','type']} for q in json.loads((ROOT/'financial_rag/example_questions.json').read_text(encoding='utf-8'))]}
 
 @app.get('/api/examples/{qid}')
 def example(qid:str,version:Literal['v3','v4']='v4'):

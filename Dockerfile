@@ -4,9 +4,6 @@ COPY requirements-backend.txt .
 RUN pip install --no-cache-dir -r requirements-backend.txt
 RUN useradd -m appuser && chown appuser:appuser /app
 COPY --chown=appuser:appuser financial_rag/ financial_rag/
-COPY --chown=appuser:appuser output/questions.json output/questions.json
-COPY --chown=appuser:appuser output/evaluation/ output/evaluation/
-COPY --chown=appuser:appuser output/evaluation_v4/ output/evaluation_v4/
 COPY --chown=appuser:appuser deploy-data/index/ data/index_v4/
 COPY --chown=appuser:appuser deploy-data/models/ .cache/models/
 ENV RAG_SERVER_MODE=public PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1

@@ -55,12 +55,20 @@ class PublicBackendTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/examples/secrets').status_code,404)
 
     def test_saved_examples_default_to_reviewed_v4_and_keep_v3_distinct(self):
-        current=self.client.get('/api/examples/Q03').json()
+        # Use temporary fixtures; real assignment attachments are local only.
+        fixture={'answer':'测试约数','manual_review':{'correct':True},'checks':{'preliminary_pass':False}}
+        for folder in ['evaluation_v4','evaluation']:
+            target=self.index/folder
+            target.mkdir()
+            (target/'Q03_hybrid_expanded.json').write_text(json.dumps(fixture),encoding='utf-8')
+        with patch.object(server,'OUTPUT',self.index):
+            current=self.client.get('/api/examples/Q03').json()
+            historical=self.client.get('/api/examples/Q03?version=v3').json()
+            self.assertEqual(self.client.get('/api/examples/Q01').status_code,404)
         self.assertEqual(current['index_version'],'v4')
         self.assertEqual(current['record_kind'],'evaluation')
         self.assertTrue(current['manual_review']['correct'])
         self.assertFalse(current['checks']['preliminary_pass'])
-        historical=self.client.get('/api/examples/Q03?version=v3').json()
         self.assertTrue(historical['historical'])
         self.assertEqual(historical['index_version'],'v3')
         self.assertEqual(self.client.get('/api/examples/Q03?version=../../').status_code,422)

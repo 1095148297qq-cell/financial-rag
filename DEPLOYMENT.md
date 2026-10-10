@@ -2,13 +2,13 @@
 
 ## 当前边界
 
-前端是独立 HTML/CSS/JavaScript，Vercel 构建不安装 Python、不处理 PDF、不计算向量。后端保留本地 BGE 向量 + BM25 检索。没有实时后端时，前端仍能浏览10道题的v4最终评测，并切换查看v3历史失败案例；已保存评测与实时检索明确区分。
+前端是独立 HTML/CSS/JavaScript，Vercel 构建不安装 Python、不处理 PDF、不计算向量。后端保留本地 BGE 向量 + BM25 检索。评测记录、结论PDF及截图只保存在作者本机，不包含在GitHub或默认前端构建中。没有实时后端时，前端仅展示提问入口及10道示例问题。
 
 本轮只准备部署文件，不创建付费资源。后端平台和费用由你确认后再上线。
 
 ## 本机预览
 
-在项目目录运行 `powershell -ExecutionPolicy Bypass -File .\start-web.ps1`，访问 http://127.0.0.1:3000 。需要 Python 3.11 环境和 Node.js 20+（本机脚本也能找到已有的 Codex Node 运行时）。先完成 v4 提取与索引。本机后端绑定 127.0.0.1，只有此模式允许使用仓库之外的已有授权。重启电脑后重新运行脚本。已有旧 Streamlit 页面仍可通过 `run.ps1` 启动。
+在项目目录运行 `powershell -ExecutionPolicy Bypass -File .\start-web.ps1`，访问 http://127.0.0.1:3000 。需要 Python 3.11 环境和 Node.js 20+（本机脚本也能找到已有的 Codex Node 运行时）。先完成 v4 提取与索引。本机启动脚本可读取本地output中的评测记录；这些附件不参与默认Vercel构建。本机后端绑定 127.0.0.1，只有此模式允许使用仓库之外的已有授权。重启电脑后重新运行脚本。已有旧 Streamlit 页面仍可通过 `run.ps1` 启动。
 
 需要重启本项目服务时，先运行 `stop-web.ps1` 再运行 `start-web.ps1`。停止脚本会校验记录的进程属于本项目，再停止它及 Python 子进程。
 
@@ -17,7 +17,7 @@
 1. 将代码推送到自己的 GitHub 仓库。不要提交 `.env`、`deploy-data`、模型缓存和授权文件。
 2. 登录 Vercel，Add New → Project，导入这个仓库。
 3. Root Directory 选仓库根目录，Framework Preset 选 Other。仓库 `vercel.json` 已指定构建命令 `node frontend/build.mjs`、输出目录 `frontend/dist`。
-4. 没有后端时直接部署，即可得到v4评测记录演示页面（尚无实时检索）。
+4. 没有后端时直接部署，即可得到前端页面（尚无实时检索或已保存答案）。
 5. 后端上线后，在 Vercel 项目环境变量设置 `RAG_API_URL=https://你的后端域名`，重新部署。这里只填公开地址，不能填 API key、OAuth token 或带凭据的 URL。
 6. 将实际 Vercel 生产域名加入后端 `RAG_ALLOWED_ORIGINS`，例如 `https://your-project.vercel.app`。预览域名需要单独加入；禁止随意使用通配符。
 
@@ -52,7 +52,7 @@ API key 模式每次最多输出 3,500 tokens；证据超过 60,000 字符时拒
 
 ## 上线验收
 
-- 未连后端时有明确演示状态，10道v4评测、v3历史失败案例和出处可查看。
+- 未连后端时有明确演示状态，不显示不存在的评测记录按钮，提交提问时明确提示需要后端。
 - 后端健康接口就绪；Vercel 页面能真实召回 v4 数据并下载记录。
 - 仅 BM25、仅向量、混合检索及公司／年度筛选正常。
 - 公开模式拒绝 local 授权，缺少访客 key 时不会调用作者账户。

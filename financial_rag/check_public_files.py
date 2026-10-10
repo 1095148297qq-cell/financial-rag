@@ -18,7 +18,7 @@ def main():
     for name in names:
         p=ROOT/name
         if (name=='.env' or (name.startswith('.env.') and name!='.env.example') or
-            any(name.startswith(x) for x in ['data/raw/','data/index/','data/index_v4/','data/processed/','.cache/','deploy-data/','api_verification/','logs/','.credentials/'])):
+            any(name.startswith(x) for x in ['output/','交付材料/','data/raw/','data/index/','data/index_v4/','data/processed/','.cache/','deploy-data/','api_verification/','logs/','.credentials/'])):
             issues.append({'file':name,'issue':'private_or_large_data_path'})
         if p.is_file() and p.suffix.lower() not in ['.png','.pdf']:
             data=p.read_bytes()
@@ -29,6 +29,7 @@ def main():
             issues.append({'file':str(p.relative_to(ROOT)),'issue':'built_credential_pattern'})
     report={'candidate_files':len(names),'issues':issues,'public_author_credentials':False,
             'frontend_build_files':sum(p.is_file() for p in built),'docker_image_built':False,'cloud_deployed':False}
+    OUTPUT.mkdir(exist_ok=True)
     (OUTPUT/'deployment_security_check.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(report,ensure_ascii=False))
     if issues:raise SystemExit('Public-file check failed; values were not printed.')
