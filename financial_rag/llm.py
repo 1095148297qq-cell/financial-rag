@@ -7,11 +7,24 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from .paths import ROOT, OUTPUT
+from .providers import provider_config
 
 load_dotenv(ROOT/'.env')
 CALL_LOCK=threading.Lock()
 CATALOG_LOCK=threading.Lock()
 CATALOG_CACHE={}
+
+
+class ModelRequestError(RuntimeError):
+    """Only application-owned messages, never raw provider response bodies."""
+
+
+def request_error(status,provider):
+    label=provider_config(provider)['name']
+    reasons={400:'请核对模型名称、输入长度与模型参数支持',401:'key无效或地域不匹配',
+             402:'请检查该服务商的余额或套餐',403:'请检查key权限、地域或模型开通状态',
+             404:'请检查模型是否可用',429:'额度不足或请求频率受限'}
+    return ModelRequestError(f"{label} 请求失败（HTTP {status}）：{reasons.get(status,'服务暂时不可用')}；未自动重试或切换服务商。")
 
 def configuration():
     mode=os.getenv('AUTH_MODE','api_key')
@@ -30,14 +43,16 @@ def configuration():
             model=next((m for m in models if 'luna' in m or 'mini' in m),models[0] if models else '')
         if not model: raise RuntimeError('当前授权没有可用模型')
     elif mode=='api_key':
-        base=os.getenv('OPENAI_BASE_URL','https://api.openai.com/v1').rstrip('/')
-        token=os.getenv('OPENAI_API_KEY','')
-        model=os.getenv('CHAT_MODEL','gpt-5.4-mini')
-        if not token: raise RuntimeError('请在本地 .env 配置自己的 OPENAI_API_KEY')
+        provider=os.getenv('API_PROVIDER','openai')
+        spec=provider_config(provider)
+        base=(os.getenv('OPENAI_BASE_URL',spec['base_url']) if provider=='openai' else spec['base_url']).rstrip('/')
+        token=os.getenv(spec['key_env'],'')
+        model=os.getenv('CHAT_MODEL','').strip() or spec['default_model']
+        if not token: raise RuntimeError('请在本地 .env 配置自己的 '+spec['key_env'])
     else: raise RuntimeError('AUTH_MODE 必须为 api_key 或 chatgpt_oauth')
     return mode,base,token,model
 
-def answer(question,chunks,*,credentials=None,required_model=None,required_auth_mode=None):
+def answer(question,chunks,*,credentials=None,required_model=None,required_auth_mode=None,provider=None):
     OUTPUT.mkdir(exist_ok=True)
     ledger=OUTPUT/'usage.jsonl'
     mode,base,token,model=credentials if credentials is not None else configuration()
@@ -45,6 +60,10 @@ def answer(question,chunks,*,credentials=None,required_model=None,required_auth_
         raise RuntimeError('模型与实验冻结配置不同；请求未发送')
     if required_auth_mode is not None and mode != required_auth_mode:
         raise RuntimeError('授权方式与实验冻结配置不同；请求未发送')
+    provider='openai' if mode=='chatgpt_oauth' else (provider or os.getenv('API_PROVIDER','openai'))
+    spec=provider_config(provider)
+    if credentials is not None and base.rstrip('/')!=spec['base_url']:
+        raise ModelRequestError('接口地址与所选服务商不匹配；请求未发送')
     evidence='\n\n'.join(f"[{i}] 公司={c['company']} 年报={c['year']} PDF页={c['page']} 章节={c['chapter']} 块={c['id']}\n{c['text']}" for i,c in enumerate(chunks,1))
     prompt=('只根据给定的上市公司年报证据回答中文问题。每项事实必须标明证据编号，例如[1]。'
         '金额先核对单位；区分营业收入和营业总收入、归母净利润和净利润。'
@@ -52,6 +71,9 @@ def answer(question,chunks,*,credentials=None,required_model=None,required_auth_
         '跨公司题逐一列出证据覆盖公司和缺失公司；不能把局部结果说成全行业结论。\n问题：'+question+'\n证据：\n'+evidence)
     body={'model':model,'store':False,'stream':True,'input':[{'role':'user','content':prompt}]}
     if mode=='api_key': body['max_output_tokens']=3500
+    if spec['protocol']=='chat_completions':
+        body={'model':model,'messages':[{'role':'user','content':prompt}],
+              'stream':False,'max_tokens':3500,**spec.get('request_options',{})}
     # Count attempts too: retries must not bypass the cost guard.
     with CALL_LOCK:
         count=sum(1 for _ in ledger.open(encoding='utf-8')) if ledger.exists() else 0
@@ -59,21 +81,41 @@ def answer(question,chunks,*,credentials=None,required_model=None,required_auth_
             raise RuntimeError('已达到本地模型调用次数上限；未自动切换计费方式')
         if credentials is None:
             with ledger.open('a',encoding='utf-8') as f:
-                f.write(json.dumps({'attempt':count+1,'mode':mode,'model':model})+'\n')
-    response=requests.post(base+'/responses',json=body,headers={'Authorization':'Bearer '+token},stream=True,timeout=(30,180))
-    if response.status_code!=200:
-        raise RuntimeError(f'模型请求失败（HTTP {response.status_code}）；没有启用其他计费方式')
-    output=''; completed=False; usage={}
-    for line in response.iter_lines():
-        if not line.startswith(b'data: '): continue
-        raw=line[6:]
-        if raw==b'[DONE]': continue
-        event=json.loads(raw)
-        if event.get('type')=='response.output_text.delta': output+=event.get('delta','')
-        if event.get('type')=='response.completed':
-            completed=True; usage=event.get('response',{}).get('usage',{}); break
-        if event.get('type') in ('response.failed','response.incomplete','error'):
-            raise RuntimeError('模型未完成回答；可能是额度或服务限制，没有自动重试或转为付费')
-    response.close()
-    if not completed: raise RuntimeError('模型流中断，回答未完成')
-    return {'answer':output,'model':model,'usage':usage,'auth_mode':mode}
+                f.write(json.dumps({'attempt':count+1,'mode':mode,'model':model,'provider':provider})+'\n')
+    endpoint='/chat/completions' if spec['protocol']=='chat_completions' else '/responses'
+    try:
+        response=requests.post(base+endpoint,json=body,headers={'Authorization':'Bearer '+token},
+                               stream=spec['protocol']=='responses',timeout=(30,180),allow_redirects=False)
+    except requests.RequestException:
+        raise ModelRequestError(spec['name']+'连接失败或超时；未自动重试或切换服务商。') from None
+    try:
+        if response.status_code!=200: raise request_error(response.status_code,provider)
+        output=''; completed=False; usage={}
+        if spec['protocol']=='chat_completions':
+            data=response.json()
+            choices=data.get('choices') or []
+            choice=choices[0] if choices else {}
+            output=(choice.get('message') or {}).get('content','')
+            if choice.get('finish_reason')!='stop' or not isinstance(output,str) or not output.strip():
+                raise ModelRequestError(spec['name']+'未返回完整文本回答，可能达到输出上限；未自动重试。')
+            raw=data.get('usage') or {}
+            usage={'input_tokens':raw.get('prompt_tokens',0),'output_tokens':raw.get('completion_tokens',0),
+                   'total_tokens':raw.get('total_tokens',0)}
+            completed=True
+        else:
+            for line in response.iter_lines():
+                if not line.startswith(b'data: '): continue
+                raw=line[6:]
+                if raw==b'[DONE]': continue
+                event=json.loads(raw)
+                if event.get('type')=='response.output_text.delta': output+=event.get('delta','')
+                if event.get('type')=='response.completed':
+                    completed=True; usage=event.get('response',{}).get('usage',{}); break
+                if event.get('type') in ('response.failed','response.incomplete','error'):
+                    raise ModelRequestError('模型未完成回答；未自动重试或转为付费。')
+        if not completed or not output.strip(): raise ModelRequestError('模型流中断或回答为空；未自动重试。')
+        return {'answer':output,'model':model,'usage':usage,'auth_mode':mode,'provider':provider}
+    except (ValueError,TypeError,AttributeError,requests.RequestException):
+        raise ModelRequestError(spec['name']+'响应格式错误或连接中断；未自动重试。') from None
+    finally:
+        response.close()

@@ -5,11 +5,21 @@ let current = null;
 let ready = false;
 const savedVersions=config.availableEvaluations||[];
 const hasSaved=savedVersions.length>0;
+const providers=config.providers||[];
 $('evaluation-controls').hidden=!hasSaved;
 $('evaluation-version').replaceChildren(...savedVersions.map(v=>Object.assign(document.createElement('option'),{value:v,textContent:v==='v4'?'v4 最终评测 · 10题':'v3 历史实验 · 含失败案例'})));
 if(!hasSaved)$('experiment-hint').textContent='点选问题填入输入框。评测结果及作业附件保存在项目作者本地，不随代码仓库发布。';
 function notice(message){$('notice').hidden=!message;$('notice').textContent=message;}
 function node(tag,text,className){const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;return n;}
+for(const provider of providers){const o=node('option',provider.name);o.value=provider.id;$('provider').append(o);}
+$('provider').onchange=()=>{
+  const provider=providers.find(p=>p.id===$('provider').value);
+  $('api-key').value='';
+  $('model').value=provider?.default_model||'';
+  $('api-key-label').textContent=(provider?.name||'服务商')+' API key';
+  $('provider-note').textContent=provider?.note||'';
+};
+$('provider').onchange();
 function inline(parent,text){
   for(const part of text.split(/(\*\*[^*]+\*\*|\[\d+\])/g)){
     if(/^\*\*/.test(part))parent.append(node('strong',part.slice(2,-2)));
@@ -32,11 +42,12 @@ function renderAnswer(text){
 }
 function show(result){
   current=result;$('result').hidden=false;
-  $('record-label').textContent=result.historical?'历史实验 · v3 索引 · 修复前的真实结果，不能作为当前 v4 质量结论':result.record_kind==='evaluation'?`已保存评测 · v4 索引 · ${result.model||''}`:'实时检索 · v4 索引';
+  const modelLabel=result.answer?` · ${providers.find(p=>p.id===result.provider)?.name||'OpenAI'} · ${result.model||''}`:'';
+  $('record-label').textContent=result.historical?'历史实验 · v3 索引 · 修复前的真实结果，不能作为当前 v4 质量结论':result.record_kind==='evaluation'?`已保存评测 · v4 索引 · ${result.model||''}`:'实时检索 · v4 索引'+modelLabel;
   $('review-status').hidden=!result.manual_review;
   $('review-status').textContent=result.manual_review?`助手复核：${result.manual_review.correct?'答对':'未通过'}。${result.manual_review.reason}`:'';
   $('result-question').textContent=result.question;
-  renderAnswer(result.answer || '已检索到以下证据。选择 GPT 回答方式后，可基于证据生成带引用的答案。');
+  renderAnswer(result.answer || '已检索到以下证据。选择模型回答方式后，可基于证据生成带引用的答案。');
   notice(result.error || result.notice || '');
   const chunks=result.chunks||[],covered=[...new Set(chunks.map(c=>c.company))];
   const firstCitation=Number((result.answer||'').match(/\[(\d+)\]/)?.[1])||1;
@@ -58,7 +69,7 @@ for(const q of config.questions){
   history.onclick=async()=>{try{show(await (await fetch(`/examples/${$('evaluation-version').value}/${q.id}.json`)).json());$('result').scrollIntoView({behavior:'smooth',block:'start'});}catch{notice('评测记录载入失败，请刷新重试。');}};
   row.append(node('span',q.id,'qid'),pick);if(hasSaved)row.append(history);$('questions').append(row);
 }
-$('auth').onchange=()=>{$('key-fields').hidden=$('auth').value!=='own_key';$('local-note').hidden=$('auth').value!=='local';$('submit').firstChild.textContent=$('auth').value==='retrieval'?'检索证据 ':'检索并回答 ';};
+$('auth').onchange=event=>{if(event&&$('auth').value!=='own_key')$('api-key').value='';$('key-fields').hidden=$('auth').value!=='own_key';$('local-note').hidden=$('auth').value!=='local';$('submit').firstChild.textContent=$('auth').value==='retrieval'?'检索证据 ':'检索并回答 ';};
 $('clear-key').onclick=()=>{$('api-key').value='';};
 $('download').onclick=()=>{if(!current)return;const u=URL.createObjectURL(new Blob([JSON.stringify(current,null,2)],{type:'application/json'}));const a=node('a','');a.href=u;a.download='financial_report_record.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
 $('ask').onsubmit=async e=>{
@@ -67,7 +78,7 @@ $('ask').onsubmit=async e=>{
   const button=$('submit');button.disabled=true;button.textContent=auth==='retrieval'?'正在检索…':'检索与生成中…';
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
   try{
-    const payload={question:$('question').value.trim(),companies:$('company').value?[$('company').value]:[],years:$('year').value?[Number($('year').value)]:[2024,2025],mode:$('mode').value,enhanced:$('enhanced').checked,panoramic:$('panoramic').checked,generate:auth!=='retrieval',auth:auth==='local'?'local':'own_key',model:$('model').value.trim()};
+  const payload={question:$('question').value.trim(),companies:$('company').value?[$('company').value]:[],years:$('year').value?[Number($('year').value)]:[2024,2025],mode:$('mode').value,enhanced:$('enhanced').checked,panoramic:$('panoramic').checked,generate:auth!=='retrieval',auth:auth==='local'?'local':'own_key',provider:$('provider').value||'openai',model:$('model').value.trim()||null};
     if(auth==='own_key')payload.api_key=$('api-key').value.trim();
     const response=await fetch(api+'/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
     const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败，请检查参数。');show(data);

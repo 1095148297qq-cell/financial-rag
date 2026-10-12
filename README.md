@@ -19,7 +19,37 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-默认 `AUTH_MODE=api_key`，使用运行者自己的 OpenAI API key；运行者自行承担 API 费用。没有 key 也可取消“使用 GPT”复选框，查看真实检索结果。向量由本地 BGE 模型计算，不调用收费的 embedding API。
+默认 `AUTH_MODE=api_key`，使用运行者自己的模型API key；运行者自行承担所选服务商的API费用。没有key也可只检索证据。向量由本地BGE模型计算，不调用收费的embedding API。
+
+## 多服务商 API
+
+新版网页选择“模型 API · 使用自己的 key”，再选择服务商、粘贴对应key即可；接口地址和默认模型自动配置，模型名称可修改为自己已开通的文本对话模型。不根据key猜测服务商，不自动换模型或转用其他账户。
+
+| 服务商 | 默认模型 | 本地环境变量 |
+|---|---|---|
+| OpenAI | `gpt-5.4-mini` | `OPENAI_API_KEY` |
+| DeepSeek | `deepseek-flash` | `DEEPSEEK_API_KEY` |
+| 通义千问（北京） | `qwen-plus` | `DASHSCOPE_API_KEY` |
+| 硅基流动（中国站） | `deepseek-ai/DeepSeek-V4-Flash` | `SILICONFLOW_API_KEY` |
+
+服务商配置集中在`financial_rag/providers.json`；前后端共用同一份配置。千问当前接入北京地域，需使用同地域key，不能混用其他地域。默认模型不是价格或可用性保证，权限与余额由用户自己的平台账户决定。
+
+网页输入的key只在当前页面内存及当前请求中使用，不保存到浏览器存储、服务端记录或问答下载中。切换服务商会清空旧key，防止误发。请求只发往服务端固定的对应官方地址，拒绝用户指定接口地址；不跟随推理请求的HTTP重定向。访客模式不读取作者的key或本机授权。本地授权模式保留，仍仅用于本机OpenAI授权。
+
+旧Streamlit页面和命令行使用本地`.env`，例如DeepSeek：
+
+```dotenv
+AUTH_MODE=api_key
+API_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的key（只填本地.env）
+CHAT_MODEL=
+```
+
+`CHAT_MODEL`留空采用服务商默认模型。OpenAI继续使用Responses API，其他三家使用Chat Completions；API key模式输出上限3500 tokens，默认关闭第三方思考模式，不自动重试。达到长度上限或仅返回思考过程时显示未完成，而不将其当作完整答案。
+
+2026-10-12完成协议模拟与密钥隔离测试；第三方账户未提供，**未进行第三方真实付费调用或质量评分**。原财报评测仍属于当时记录的GPT模型，不代表这些服务商模型的答题质量。更换回答适配代码后，历史挑战协议的代码SHA核验会阻止直接重生成旧报告，应保留原输出或在原提交版本复现。
+
+接口依据：[OpenAI官方文档](https://developers.openai.com/api/docs/guides/streaming-responses)、[DeepSeek官方文档](https://api-docs.deepseek.com/api/create-chat-completion/)、[千问官方文档](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)、[硅基流动官方文档](https://docs.siliconflow.cn/docs/api/chat-completions-post)。
 
 本项目还支持经过验证的官方 ChatGPT 授权模式：Windows 上运行 `python -m financial_rag.oauth`，在官方浏览器页面授权；将本地 `.env` 的 `AUTH_MODE` 设为 `chatgpt_oauth`、`CHAT_MODEL` 留空。模型从账户返回的可用列表选取，凭据由 Windows DPAPI 加密，保存在用户目录 `.financial-report-rag`，不会写入仓库。额度用尽时停止，不自动转用收费 API。该官方预览能力受账户资格、模型和计划额度限制，不保证所有账户都能使用。
 

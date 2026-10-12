@@ -9,6 +9,7 @@ for(const file of ['index.html','style.css','app.js'])fs.copyFileSync(path.join(
 let apiUrl=(process.env.RAG_API_URL||'').trim().replace(/\/$/,'');
 if(apiUrl){const u=new URL(apiUrl);if(u.protocol!=='https:' && !(u.protocol==='http:'&&['127.0.0.1','localhost'].includes(u.hostname)))throw new Error('RAG_API_URL must use HTTPS (except localhost)');if(u.username||u.password||u.search||u.hash)throw new Error('API URL must not contain credentials/query/hash');}
 const questions=JSON.parse(fs.readFileSync(path.join(root,'financial_rag/example_questions.json'),'utf8')).map(({id,question,companies,years,type})=>({id,question,companies,years,type}));
+const providers=JSON.parse(fs.readFileSync(path.join(root,'financial_rag/providers.json'),'utf8')).map(({id,name,default_model,note,docs_url})=>({id,name,default_model,note,docs_url}));
 const companies=[...new Set(JSON.parse(fs.readFileSync(path.join(root,'data/manifest.json'),'utf8')).map(r=>r.company))];
 const availableEvaluations=[];
 for(const version of process.env.RAG_INCLUDE_EVALUATIONS==='1'?['v4','v3']:[]){
@@ -23,5 +24,5 @@ for(const version of process.env.RAG_INCLUDE_EVALUATIONS==='1'?['v4','v3']:[]){
     fs.writeFileSync(path.join(dist,'examples',version,q.id+'.json'),JSON.stringify({question,answer,chunks,mode,error,manual_review,model,checks,retrieval_revision,record_kind:'evaluation',historical:version==='v3',index_version:version,notice:version==='v3'?'历史真实实验：使用修复前 v3 索引，不代表当前 v4 质量。':'v4 固定题评测记录，非实时生成；10题用于开发，不能代表总体准确率。'}));
   }
 }
-fs.writeFileSync(path.join(dist,'config.json'),JSON.stringify({apiUrl,companies,questions,availableEvaluations,defaultEvaluation:availableEvaluations[0]||null}));
+fs.writeFileSync(path.join(dist,'config.json'),JSON.stringify({apiUrl,companies,questions,providers,availableEvaluations,defaultEvaluation:availableEvaluations[0]||null}));
 console.log(`Built frontend: ${questions.length} question prompts; saved evaluation versions: ${availableEvaluations.join(',')||'none'}; live backend ${apiUrl?'configured':'not configured'}`);

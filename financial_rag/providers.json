@@ -1,0 +1,6 @@
+[
+  {"id":"openai","name":"OpenAI","base_url":"https://api.openai.com/v1","protocol":"responses","default_model":"gpt-5.4-mini","key_env":"OPENAI_API_KEY","note":"使用你自己的OpenAI API key；模型需在你的账户权限内。","docs_url":"https://developers.openai.com/api/docs/guides/streaming-responses"},
+  {"id":"deepseek","name":"DeepSeek","base_url":"https://api.deepseek.com/v1","protocol":"chat_completions","default_model":"deepseek-flash","key_env":"DEEPSEEK_API_KEY","request_options":{"thinking":{"type":"disabled"}},"note":"使用DeepSeek开放平台的API key。","docs_url":"https://api-docs.deepseek.com/api/create-chat-completion/"},
+  {"id":"qwen","name":"通义千问 · 北京","base_url":"https://dashscope.aliyuncs.com/compatible-mode/v1","protocol":"chat_completions","default_model":"qwen-plus","key_env":"DASHSCOPE_API_KEY","request_options":{"enable_thinking":false},"note":"使用阿里云百炼北京地域的API key；其他地域的key不能混用。","docs_url":"https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope"},
+  {"id":"siliconflow","name":"硅基流动 · 中国站","base_url":"https://api.siliconflow.cn/v1","protocol":"chat_completions","default_model":"deepseek-ai/DeepSeek-V4-Flash","key_env":"SILICONFLOW_API_KEY","request_options":{"enable_thinking":false},"note":"使用硅基流动中国站API key；可改为该平台已开通的文本对话模型。","docs_url":"https://docs.siliconflow.cn/docs/api/chat-completions-post"}
+]

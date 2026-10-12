@@ -22,7 +22,7 @@ with st.sidebar:
     enhanced=st.checkbox('混合检索增强：术语展开与页面补全',value=True)
     k=st.slider('普通问题召回块数',4,16,8)
     st.caption('全景模式每家公司召回 2 块，显示覆盖范围。')
-    st.caption('认证在本地 .env 配置。页面不会显示或收集密钥。')
+    st.caption('认证在本地 .env 配置；API_PROVIDER可选openai/deepseek/qwen/siliconflow。页面不会显示或收集密钥。')
     records=sorted((__import__('pathlib').Path(__file__).parent/'output/evaluation_v4').glob('*_hybrid_expanded.json'))
     if records:
         chosen=st.selectbox('查看已完成的真实实验',[p.stem for p in records])
@@ -36,7 +36,7 @@ if not (INDEX/'vectors.npy').exists():
 
 with st.form('ask',border=False):
     question=st.text_area('你的问题',placeholder='例如：五粮液 2025 年营业收入和归母净利润是多少？',height=90)
-    generate=st.checkbox('使用 GPT 生成带引用的回答',value=True)
+    generate=st.checkbox('使用模型生成带引用的回答',value=True)
     submitted=st.form_submit_button('检索并回答',type='primary')
 if submitted:
     if not question.strip():
@@ -55,7 +55,7 @@ if submitted:
     st.session_state['result']={'question':question,'chunks':chunks,'mode':mode,'panoramic':panoramic}
     if generate:
         try:
-            with st.spinner('GPT 正在根据证据回答…'):
+            with st.spinner('模型正在根据证据回答…'):
                 st.session_state['result'].update(answer(question,chunks))
         except Exception as exc:
             st.session_state['result']['error']=str(exc)
@@ -68,7 +68,7 @@ if result:
     st.subheader('回答')
     if result.get('error'): st.error(result['error'])
     if result.get('answer'): st.markdown(result['answer'])
-    else: st.info('以下为检索结果。启用 GPT 后可生成答案。')
+    else: st.info('以下为检索结果。启用模型回答后可生成答案。')
     covered=sorted({c['company'] for c in chunks})
     st.caption(f"证据覆盖 {len(covered)} 家：{'、'.join(covered)}")
     st.subheader('出处与召回记录')

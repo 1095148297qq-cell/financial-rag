@@ -4,6 +4,7 @@
 !financial_rag/
 !financial_rag/*.py
 !financial_rag/example_questions.json
+!financial_rag/providers.json
 !deploy-data/
 !deploy-data/index/
 !deploy-data/index/*

@@ -10,11 +10,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from .paths import COMPANIES, INDEX, OUTPUT, ROOT
 from .retrieval import Retriever
-from .llm import answer
+from .llm import answer, ModelRequestError
+from .providers import PROVIDERS,provider_config,public_providers
 
 LOCAL = os.getenv('RAG_SERVER_MODE','public') == 'local'
 ORIGINS = [x.strip() for x in os.getenv('RAG_ALLOWED_ORIGINS','http://127.0.0.1:3000,http://localhost:3000').split(',') if x.strip()]
@@ -30,6 +31,7 @@ async def validation_error(request,exc):
     return JSONResponse(status_code=422,content={'detail':'请求参数不符合要求，请检查问题、年度、检索方式和模型名称。'})
 
 class Query(BaseModel):
+    model_config=ConfigDict(extra='forbid')
     question: str = Field(min_length=2,max_length=1000)
     companies: list[str] = Field(default_factory=list,max_length=12)
     years: list[Literal[2024,2025]] = Field(default_factory=lambda:[2024,2025],min_length=1,max_length=2)
@@ -40,7 +42,8 @@ class Query(BaseModel):
     generate: bool = False
     auth: Literal['own_key','local'] = 'own_key'
     api_key: SecretStr | None = None
-    model: str = Field(default='gpt-5.4-mini',pattern=r'^gpt-[a-zA-Z0-9.\-]{1,60}$')
+    provider: str = Field(default='openai',pattern=r'^[a-z][a-z0-9_]{0,31}$')
+    model: str | None = Field(default=None,pattern=r'^[a-zA-Z0-9][a-zA-Z0-9._:/\-]{0,127}$')
 
 @lru_cache(maxsize=1)
 def retriever(fingerprint): return Retriever()
@@ -53,6 +56,7 @@ def health():
 @app.get('/api/config')
 def config():
     return {'companies':NAMES,'years':[2024,2025],'local_auth':LOCAL,
+        'providers':public_providers(),
         'questions':[{k:q[k] for k in ['id','question','companies','years','type']} for q in json.loads((ROOT/'financial_rag/example_questions.json').read_text(encoding='utf-8'))]}
 
 @app.get('/api/examples/{qid}')
@@ -67,6 +71,7 @@ def example(qid:str,version:Literal['v3','v4']='v4'):
 @app.post('/api/query')
 def query(q:Query,request:Request):
     if any(name not in NAMES for name in q.companies): raise HTTPException(422,'公司不在材料范围内')
+    if q.provider not in PROVIDERS: raise HTTPException(422,'不支持的模型服务商')
     credentials=None
     if q.generate:
         if q.auth=='local':
@@ -75,8 +80,9 @@ def query(q:Query,request:Request):
                 raise HTTPException(403,'本地授权仅供本机使用；公开站点请使用自己的 API key')
         else:
             key=q.api_key.get_secret_value().strip() if q.api_key else ''
-            if not key or len(key)>512: raise HTTPException(400,'生成回答需要你自己的 OpenAI API key')
-            credentials=('api_key','https://api.openai.com/v1',key,q.model)
+            if not key or len(key)>512: raise HTTPException(400,'生成回答需要所选服务商的API key')
+            spec=provider_config(q.provider)
+            credentials=('api_key',spec['base_url'],key,q.model or spec['default_model'])
     if not SLOTS.acquire(blocking=False): raise HTTPException(429,'正在处理其他查询，请稍后重试')
     try:
         if not (INDEX/'version.json').exists(): raise HTTPException(503,'索引正在准备，请稍后重试')
@@ -96,7 +102,8 @@ def query(q:Query,request:Request):
             elif sum(len(c['text']) for c in chunks)>60000:
                 result['error']='本次证据超过 60,000 字符，未调用模型。请缩小公司或年度范围，以控制输入成本。'
             else:
-                try: result.update(answer(q.question,chunks,credentials=credentials))
+                try: result.update(answer(q.question,chunks,credentials=credentials,provider=q.provider if credentials else 'openai'))
+                except ModelRequestError as exc: result['error']=str(exc)
                 except Exception: result['error']='模型调用未完成。请检查自己的 key、额度及模型权限；未自动重试或切换账户。'
         return result
     finally: SLOTS.release()
