@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const config = await (await fetch('/config.json')).json();
+const config = await (await fetch('/config.json',{cache:'no-store'})).json();
 const api = config.apiUrl.replace(/\/$/,'');
 let current = null;
 let ready = false;
@@ -47,7 +47,7 @@ function show(result){
   $('review-status').hidden=!result.manual_review;
   $('review-status').textContent=result.manual_review?`助手复核：${result.manual_review.correct?'答对':'未通过'}。${result.manual_review.reason}`:'';
   $('result-question').textContent=result.question;
-  renderAnswer(result.answer || '已检索到以下证据。选择模型回答方式后，可基于证据生成带引用的答案。');
+  renderAnswer(result.answer || ((result.chunks||[]).length?'已检索到以下证据。选择模型回答方式后，可基于证据生成带引用的答案。':'未找到符合本次问题范围的证据，请查看提示或补充问题。'));
   notice(result.error || result.notice || '');
   const chunks=result.chunks||[],covered=[...new Set(chunks.map(c=>c.company))];
   const firstCitation=Number((result.answer||'').match(/\[(\d+)\]/)?.[1])||1;
@@ -62,10 +62,9 @@ function show(result){
     d.append(node('pre',c.text),node('p',`块 ID：${c.id}`,'chunk-id'));$('evidence').append(d);
   });
 }
-for(const name of config.companies){const o=node('option',name);o.value=name;$('company').append(o);}
 for(const q of config.questions){
   const row=node('div','','question-row'),pick=node('button',q.question,'pick'),history=node('button','评测记录','quiet');
-  pick.type=history.type='button';pick.onclick=()=>{$('question').value=q.question;$('company').value=q.companies.length===1?q.companies[0]:'';$('year').value=q.years.length===1?String(q.years[0]):'';$('panoramic').checked=q.type==='panoramic';$('question').focus();};
+  pick.type=history.type='button';pick.onclick=()=>{$('question').value=q.question;$('question').focus();};
   history.onclick=async()=>{try{show(await (await fetch(`/examples/${$('evaluation-version').value}/${q.id}.json`)).json());$('result').scrollIntoView({behavior:'smooth',block:'start'});}catch{notice('评测记录载入失败，请刷新重试。');}};
   row.append(node('span',q.id,'qid'),pick);if(hasSaved)row.append(history);$('questions').append(row);
 }
@@ -78,8 +77,8 @@ $('ask').onsubmit=async e=>{
   const button=$('submit');button.disabled=true;button.textContent=auth==='retrieval'?'正在检索…':'检索与生成中…';
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
   try{
-  const payload={question:$('question').value.trim(),companies:$('company').value?[$('company').value]:[],years:$('year').value?[Number($('year').value)]:[2024,2025],mode:$('mode').value,enhanced:$('enhanced').checked,panoramic:$('panoramic').checked,generate:auth!=='retrieval',auth:auth==='local'?'local':'own_key',provider:$('provider').value||'openai',model:$('model').value.trim()||null};
-    if(auth==='own_key')payload.api_key=$('api-key').value.trim();
+  const payload={question:$('question').value.trim(),generate:auth!=='retrieval',auth:auth==='local'?'local':'own_key'};
+    if(auth==='own_key')Object.assign(payload,{api_key:$('api-key').value.trim(),provider:$('provider').value||'openai',model:$('model').value.trim()||null});
     const response=await fetch(api+'/api/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
     const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'请求失败，请检查参数。');show(data);
   }catch(error){notice(error.name==='AbortError'?'请求等待超时，请稍后重试。':(error.message==='Failed to fetch'?'无法连接后端，请检查后端服务及跨域配置。':error.message));}

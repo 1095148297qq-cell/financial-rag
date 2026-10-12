@@ -140,4 +140,42 @@ class Retriever:
                     chunks.append(chunk); seen.add(chunk['id'])
         return chunks
 
+    def automatic(self, plan):
+        """Fixed hybrid retrieval; broaden general questions, preserve statement scope."""
+        question, companies, years = plan['search_question'], plan['companies'], plan['years']
+        if not years: return []
+        scoped = any(w in question for w in ['母公司', '附注', '补充资料', '调节', '调整项目', '间接法'])
+        annual = any(w in question for w in ['营业收入', '净利润', '现金流', '净资产收益率', 'ROE'])
+        if annual and not scoped and (plan['explicit_companies'] or plan['panoramic']):
+            return self.expanded(question, companies, years, plan['panoramic'])
+        if plan['panoramic']:
+            return self.panoramic(question, companies, years, 'hybrid', per_company=3)
+        if not plan['explicit_companies']:
+            return self.search(question, 'hybrid', 12, companies, years)
+        # Reserve space for each requested company/year; never let a single report dominate.
+        seeds = []
+        for company in companies:
+            for year in years:
+                seeds.extend(self.search(question, 'hybrid', 4, [company], [year]))
+        if '母公司' in question and '现金流' in question:
+            labels=['经营活动产生的现金流量净额'] if '经营' in question else [
+                '经营活动产生的现金流量净额','投资活动产生的现金流量净额','筹资活动产生的现金流量净额']
+            for c in self.chunks:
+                if c['company'] not in companies or c['year'] not in years: continue
+                if c.get('statement') not in ['母公司现金流量表','合并现金流量表']: continue
+                if any(any(label in ''.join(row['values'][0].split()) for label in labels)
+                       for row in c.get('rows',[]) if row.get('values')):
+                    seeds.append(c)
+        seen = {c['id'] for c in seeds}
+        chunks = list({c['id']: c for c in seeds}.values())
+        # Restore the leading evidence page and other rows of selected source tables.
+        tables = {(c['report_id'], c['page'], c.get('table')) for c in seeds if c.get('kind') == 'table_row'}
+        pages={}
+        for c in seeds: pages.setdefault((c['company'],c['year']),c['page'])
+        for c in self.chunks:
+            if c['id'] not in seen and (pages.get((c['company'],c['year']))==c['page'] or
+                    (c['report_id'], c['page'], c.get('table')) in tables):
+                chunks.append(c); seen.add(c['id'])
+        return chunks
+
 if __name__=='__main__': build()

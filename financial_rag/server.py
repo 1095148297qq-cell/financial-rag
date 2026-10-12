@@ -10,12 +10,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from .paths import COMPANIES, INDEX, OUTPUT, ROOT
 from .retrieval import Retriever
 from .llm import answer, ModelRequestError
 from .providers import PROVIDERS,provider_config,public_providers
+from .query_plan import plan_question
 
 LOCAL = os.getenv('RAG_SERVER_MODE','public') == 'local'
 ORIGINS = [x.strip() for x in os.getenv('RAG_ALLOWED_ORIGINS','http://127.0.0.1:3000,http://localhost:3000').split(',') if x.strip()]
@@ -28,11 +29,16 @@ NAMES = [name for _,name in COMPANIES]
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
     # Do not echo request input: it can contain the visitor's API key.
-    return JSONResponse(status_code=422,content={'detail':'请求参数不符合要求，请检查问题、年度、检索方式和模型名称。'})
+    labels={'question':'问题（请填写2至4000个字符）','model':'模型名称（请使用服务商的模型ID，例如 qwen-plus，而非显示名称）',
+            'provider':'模型服务商','years':'年度（库内为2024、2025）','mode':'检索方式','api_key':'API key',
+            'auth':'回答方式','companies':'公司范围','k':'召回数量','version':'记录版本'}
+    fields=sorted({str(e['loc'][-1]) for e in exc.errors() if e.get('loc')})
+    detail='请检查：'+'；'.join(labels.get(f,'请求字段') for f in fields)+'。'
+    return JSONResponse(status_code=422,content={'detail':detail,'error_code':'request_validation'})
 
 class Query(BaseModel):
     model_config=ConfigDict(extra='forbid')
-    question: str = Field(min_length=2,max_length=1000)
+    question: str = Field(min_length=2,max_length=4000)
     companies: list[str] = Field(default_factory=list,max_length=12)
     years: list[Literal[2024,2025]] = Field(default_factory=lambda:[2024,2025],min_length=1,max_length=2)
     mode: Literal['hybrid','vector','bm25'] = 'hybrid'
@@ -44,6 +50,18 @@ class Query(BaseModel):
     api_key: SecretStr | None = None
     provider: str = Field(default='openai',pattern=r'^[a-z][a-z0-9_]{0,31}$')
     model: str | None = Field(default=None,pattern=r'^[a-zA-Z0-9][a-zA-Z0-9._:/\-]{0,127}$')
+
+    @model_validator(mode='before')
+    @classmethod
+    def relevant_fields(cls, values):
+        if not isinstance(values,dict): return values
+        values=dict(values)
+        if isinstance(values.get('question'),str): values['question']=values['question'].strip()
+        if values.get('generate',False) is False or values.get('auth')=='local':
+            # These settings are unused in retrieval/local OAuth; do not validate hidden stale inputs.
+            values.update(provider='openai',model=None,api_key=None)
+        elif isinstance(values.get('model'),str): values['model']=values['model'].strip() or None
+        return values
 
 @lru_cache(maxsize=1)
 def retriever(fingerprint): return Retriever()
@@ -86,24 +104,34 @@ def query(q:Query,request:Request):
     if not SLOTS.acquire(blocking=False): raise HTTPException(429,'正在处理其他查询，请稍后重试')
     try:
         if not (INDEX/'version.json').exists(): raise HTTPException(503,'索引正在准备，请稍后重试')
-        names=q.companies or [n for n in NAMES if n in q.question] or NAMES
-        years=[y for y in q.years if str(y) in q.question] or q.years
-        panorama=q.panoramic or len(names)>3 or any(w in q.question for w in ['12 家','12家','逐一','完整排序','几家增长'])
+        plan=plan_question(q.question)
+        # Explicit legacy controls remain available to reproduce historical course experiments.
+        legacy=bool(q.model_fields_set & {'companies','years','mode','enhanced','panoramic','k'})
+        names=(q.companies or plan['companies']) if legacy else plan['companies']
+        years=([y for y in q.years if y in plan['years']] if 'years' in q.model_fields_set else plan['years'])
+        panorama=q.panoramic or plan['panoramic']
         with SEARCH_LOCK:
             version=json.loads((INDEX/'version.json').read_text(encoding='utf-8'))
             r=retriever(version['fingerprint'])
-            if q.enhanced and q.mode=='hybrid': chunks=r.expanded(q.question,names,years,panorama)
+            if not legacy: chunks=r.automatic(plan)
+            elif q.enhanced and q.mode=='hybrid': chunks=r.expanded(q.question,names,years,panorama)
             elif panorama: chunks=r.panoramic(q.question,names,years,q.mode)
             else: chunks=r.search(q.question,q.mode,q.k,names,years)
         result={'question':q.question,'chunks':chunks,'mode':q.mode,'enhanced':q.enhanced,'panoramic':panorama,
-            'index_version':'v4','retrieval_revision':'annual_table_routing','companies':names,'years':years,'covered':sorted({c['company'] for c in chunks})}
+            'index_version':'v4','retrieval_revision':'automatic_hybrid_v1' if not legacy else 'annual_table_routing',
+            'companies':names,'years':years,'covered':sorted({c['company'] for c in chunks}),
+            'search_question':plan['search_question'],'notice':' '.join(plan['notes'])}
         if q.generate:
-            if not chunks: result['error']='未找到证据，未调用模型。'
+            if plan['unavailable_years']: result['error']='问题包含库内没有的年度，未调用模型。'+result['notice']
+            elif not chunks: result['error']='未找到证据，未调用模型。'
             elif sum(len(c['text']) for c in chunks)>60000:
-                result['error']='本次证据超过 60,000 字符，未调用模型。请缩小公司或年度范围，以控制输入成本。'
+                result['error']='本次证据超过 60,000 字符，未调用模型。请在问题中明确公司、年度或具体指标，以控制输入成本。'
             else:
                 try: result.update(answer(q.question,chunks,credentials=credentials,provider=q.provider if credentials else 'openai'))
-                except ModelRequestError as exc: result['error']=str(exc)
-                except Exception: result['error']='模型调用未完成。请检查自己的 key、额度及模型权限；未自动重试或切换账户。'
+                except ModelRequestError as exc:
+                    result['error']=str(exc);result['error_code']='model_request'
+                except Exception:
+                    result['error_code']='local_model_or_authorization' if q.auth=='local' else 'model_request'
+                    result['error']=('本机GPT授权或推理服务未完成，请检查登录状态、账户额度和网络。' if q.auth=='local' else '模型调用未完成，请检查所选服务商的key、额度及模型权限。')+'未自动重试或切换账户。'
         return result
     finally: SLOTS.release()

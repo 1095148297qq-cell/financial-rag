@@ -36,7 +36,7 @@ class PublicBackendTests(unittest.TestCase):
         self.assertEqual(response.status_code,422);self.assertNotIn('SECRET_SENTINEL',response.text)
 
     def test_keys_are_request_scoped_and_absent_in_result(self):
-        r=MagicMock();r.expanded.return_value=[{'company':'五粮液','id':'test','text':'证据'}]
+        r=MagicMock();r.automatic.return_value=[{'company':'五粮液','id':'test','text':'证据'}]
         with patch.object(server,'retriever',return_value=r),patch.object(server,'answer',return_value={'answer':'测试'}) as model:
             for key in ['FIRST_SENTINEL','SECOND_SENTINEL']:
                 response=self.client.post('/api/query',json={'question':'五粮液营业收入','generate':True,'api_key':key})

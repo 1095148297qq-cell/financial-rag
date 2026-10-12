@@ -111,7 +111,7 @@ class ProviderBackendTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_provider_defaults_and_keys_remain_request_scoped(self):
-        retriever=MagicMock();retriever.expanded.return_value=CHUNKS
+        retriever=MagicMock();retriever.automatic.return_value=CHUNKS
         with patch.object(server,'retriever',return_value=retriever),patch.object(server,'answer',return_value={'answer':'收入123.45元。[1]'}) as answer:
             for provider in PROVIDERS:
                 key='SENTINEL_'+provider
@@ -133,14 +133,14 @@ class ProviderBackendTests(unittest.TestCase):
             self.assertEqual(response.status_code,400);answer.assert_not_called()
 
     def test_platform_model_names_with_slashes_are_accepted(self):
-        retriever=MagicMock();retriever.expanded.return_value=CHUNKS
+        retriever=MagicMock();retriever.automatic.return_value=CHUNKS
         with patch.object(server,'retriever',return_value=retriever),patch.object(server,'answer',return_value={'answer':'测试'}) as answer:
             response=self.client.post('/api/query',json={'question':'收入多少？','generate':True,'provider':'siliconflow','model':'deepseek-ai/DeepSeek-V4-Flash','api_key':'SECRET_SENTINEL'})
             self.assertEqual(response.status_code,200)
             self.assertEqual(answer.call_args.kwargs['credentials'][3],'deepseek-ai/DeepSeek-V4-Flash')
 
     def test_generic_failures_do_not_leak_provider_payload(self):
-        retriever=MagicMock();retriever.expanded.return_value=CHUNKS
+        retriever=MagicMock();retriever.automatic.return_value=CHUNKS
         with patch.object(server,'retriever',return_value=retriever),patch.object(server,'answer',side_effect=RuntimeError('SECRET_SENTINEL')):
             response=self.client.post('/api/query',json={'question':'收入多少？','generate':True,'provider':'deepseek','api_key':'SECRET_SENTINEL'})
             self.assertIn('error',response.json());self.assertNotIn('SECRET_SENTINEL',response.text)
